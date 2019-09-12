@@ -7,11 +7,28 @@ use std::str;
 use std::io;
 
 #[derive(Debug)]
+struct Obj{
+    offset:u32,
+    genid:u32,
+    sign: bool,
+}
+impl Obj{
+    fn new(offset:u32, genid:u32, sign:bool)->Obj{
+        Obj{offset, genid, sign}
+    }
+}
+#[derive(Debug)]
 pub struct Pdf{
     version : String,
+    obj_list : Vec<Obj>,
 }
 
+
+
 impl Pdf{
+    pub fn new()->Pdf{
+        Pdf{version:"".to_string(), obj_list:Vec::new()}
+    }
    pub  fn open(path :&'static str) -> io::Result<Pdf>{
         let mut file = File::open(path).unwrap();
         println!("{:?}",file);
@@ -52,31 +69,77 @@ impl Pdf{
         if ref_offset ==0{
              return Err(Error::new(ErrorKind::Other,"ref_offset"));
         }
-           // Err("?")
-            buf_reader.seek(SeekFrom::Start(ref_offset as u64));
+        // Err("?")
+        buf_reader.seek(SeekFrom::Start(ref_offset as u64));
+        let mut buffer = String::new();
+        buf_reader.read_line(&mut buffer)?;
+        if buffer !="xref\n"{
+           return Err(Error::new(ErrorKind::Other,"ref sign"));
+        }
+        let mut pdf = Pdf::new();
+        loop{
             let mut buffer = String::new();
             buf_reader.read_line(&mut buffer)?;
-            if buffer !="xref\n"{
-               return Err(Error::new(ErrorKind::Other,"ref sign"));
+             if buffer == "trailer\n"{
+                read_trailer(&mut pdf, &mut buf_reader);
+                break;
             }
-            loop{
-                let mut buffer = String::new();
-                buf_reader.read_line(&mut buffer)?;
-                 if buffer == "trailer\n"{
-                    break;
-                }
-                let  iter: Vec<&str>= buffer.split_whitespace().collect();
-
-                let count:u32 =  iter[1].parse().unwrap();
-                for i in 0..count{
-                    buffer.clear();
-                     buf_reader.read_line(&mut buffer)?;
-                     let  three: Vec<&str>= buffer.split_whitespace().collect();
-                     println!("{:?}", three);
-                }
-                // println!("{:?}", iter);
+            let  iter: Vec<&str>= buffer.split_whitespace().collect();
+            let count:u32 =  iter[1].parse().unwrap();
+            for i in 0..count{
+                buffer.clear();
+                 buf_reader.read_line(&mut buffer)?;
+                 let  three: Vec<&str>= buffer.split_whitespace().collect();
+                 println!("{:?}", three);
+                 let offset:u32 = three[0].parse().expect("??");
+                 let genid:u32 = three[1].parse().expect("??");
+                 let sign:bool = match three[2] {
+                     "n"=>true,
+                     _=>false,
+                 };
+                let obj = Obj::new(offset, genid,sign);
+                pdf.obj_list.push(obj);
             }
+            // println!("{:?}", iter);
+        }
+        // here is trailer <</Size 20 /Root 3 0 R /Info 1 0 R>>
         
-        Ok(Pdf{version:ver})
+        Ok(pdf)
     }
+}
+fn read_trailer(pdf:&mut Pdf, buf_reader:&mut BufReader<File>)->io::Result<usize>{
+     read_object(buf_reader);
+    let mut buffer = String::new();
+    buf_reader.read_line(&mut buffer)?;
+    println!("{}", buffer);
+    buf_reader.read_line(&mut buffer)?;
+    println!("{}", buffer);
+   
+    Ok(0)
+}
+fn read_object(buf_reader:&mut BufReader<File>)->io::Result<usize>{
+  let mut buffer = String::new();
+    read_token(buf_reader);
+    buf_reader.read_line(&mut buffer)?;
+    println!("{}", buffer);
+    Ok(0)
+}
+
+enum Token {
+    None,
+    OBJ_BEGIN,
+    OBJ_END,
+    ARRAY_BEGIN,
+    ARRAY_END,
+    WORD,
+
+}
+
+fn read_token(buf_reader:&mut BufReader<File>)->Token{
+     let mut buf: Vec<u8>  = Vec::with_capacity(10);
+    buf_reader.read_until(b' ', &mut buf);
+    let ver = String::from_utf8(buf).unwrap();//str::from_utf8(&buf).unwrap();
+    println!("token:   {}",ver );
+
+    Token::None
 }
