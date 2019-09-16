@@ -108,7 +108,7 @@ impl Pdf{
     }
 }
 fn read_trailer(pdf:&mut Pdf, buf_reader:&mut BufReader<File>)->io::Result<usize>{
-     read_object(buf_reader);
+    read_dictonary(buf_reader);
     let mut buffer = String::new();
     buf_reader.read_line(&mut buffer)?;
     println!("{}", buffer);
@@ -117,6 +117,13 @@ fn read_trailer(pdf:&mut Pdf, buf_reader:&mut BufReader<File>)->io::Result<usize
    
     Ok(0)
 }
+
+// << >>
+fn read_dictonary(buf_reader:&mut BufReader<File>)->io::Result<usize>{
+      read_token(buf_reader);
+    Ok(0)
+}
+// obj  endobj
 fn read_object(buf_reader:&mut BufReader<File>)->io::Result<usize>{
   let mut buffer = String::new();
     read_token(buf_reader);
@@ -132,14 +139,94 @@ enum Token {
     ARRAY_BEGIN,
     ARRAY_END,
     WORD,
-
+    NAME(String),
 }
 
+// lexer
 fn read_token(buf_reader:&mut BufReader<File>)->Token{
-     let mut buf: Vec<u8>  = Vec::with_capacity(10);
-    buf_reader.read_until(b' ', &mut buf);
-    let ver = String::from_utf8(buf).unwrap();//str::from_utf8(&buf).unwrap();
-    println!("token:   {}",ver );
+     let mut buf :[u8;1]=[0];
+     let mut ch :u8;
+     match buf_reader.read(&mut buf){
+         Ok(n) => ch = buf[0],
+         _ => return Token::None,
+     }
+     // 过滤空白符
+     match ch{
+        ch if is_white(ch) => skip_white(buf_reader),
+        _ =>  {buf_reader.seek(SeekFrom::Current(-1));},
+     }
+     loop{
+        match buf_reader.read(&mut buf){
+             Ok(n) => ch = buf[0],
+             _ => return Token::None,//TODO
+        }
+        match ch{
+            b'%' => skip_comment(buf_reader),
+            // b'/' => read_name(buf_reader),
+            _ => (),
+        }
+        
+     }
+    // println!("token:   {}",ver );
 
     Token::None
 }
+
+
+fn read_name(buf_reader:&mut BufReader<File>)->Token{
+    let mut buf: Vec<u8>  = Vec::with_capacity(128);
+
+    let mut buf :[u8;1]=[0];
+    loop{
+         match buf_reader.read(&mut buf){
+            Ok(c) => match c {
+                b'#' => (),
+                _=> buf.push(c);
+            }
+            _ => break,
+        }
+    }
+    Token::NAME("st".to_string())
+}
+fn skip_comment(buf_reader:&mut BufReader<File>){
+
+}
+fn skip_white(buf_reader:&mut BufReader<File>){
+    let mut buf :[u8;1]=[0];
+    loop{
+        match buf_reader.read(&mut buf){
+            Ok(c) => if c!=0x20&&c!=0x0d&&c!=0x0a&&c!=0x0c&&c!=0x09{ 
+                buf_reader.seek(SeekFrom::Current(-1));
+                break;
+            },
+            _ => break,
+        }
+    }
+}
+fn is_white(ch :u8)->bool{
+    return true;
+}
+
+/*
+bool
+ true false
+number
+[+-]nnn.nnn
+name  max127
+/xxx
+xxx:  0x21-0x7E
+xxx:  #hex 十六进制
+
+string
+xxxx ：
+xxx： \ddd  八进制
+xxx: <dd> 十六进制
+\n \r \t \b（退格） \f(换页) \（  \), \\
+
+dict
+<< >>
+array
+[]
+
+
+*/
