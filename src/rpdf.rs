@@ -134,12 +134,36 @@ fn read_trailer(pdf: &mut Pdf, buf_reader: &mut BufReader<File>) -> io::Result<u
 */
 fn read_dictonary(buf_reader: &mut BufReader<File>) -> io::Result<usize> {
     let mut dict = Dict::new();
+    println!("read_dict");
+    let mut check_dict_begin = false;
     loop{
         let tk =  read_token(buf_reader);
-        println!("read_dict {:?}",tk);
-        // match tk{
-        //     Token::DICT_END =>
-        // }
+        if !check_dict_begin{
+            check_dict_begin = true;
+            if let Ok(Token::DICT_BEGIN)=tk{
+                continue;
+            }
+        }
+        if let Ok(Token::DICT_END) = tk{
+            break;
+        }
+        if let Ok(Token::NAME(key)) = tk{
+            //read value
+            let tk = read_token(buf_reader);
+            match tk{
+                Ok(Token::INTEGER(n))=>{
+
+                }
+                Ok(Token::STRING(s))=>{
+
+                }
+                _=>{
+
+                }
+            }
+        }else{
+            println!("error happen {:?}", tk);
+        }
     }
     Ok(0)
 }

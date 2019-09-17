@@ -14,12 +14,18 @@ pub enum Token {
     OBJ_END,
     ARRAY_BEGIN,
     ARRAY_END,
+    STREAM_BEGIN,
+    STREAM_END,
+    R,
     WORD,
     DICT_END,
     DICT_BEGIN,
+    BOOL(bool),
+    NULL,
     INTEGER(i32),
     DOUBLE(f64),
     NAME(String),
+    STRING(String),
 }
 pub struct Dict<V>{
     map:HashMap<String,V>,
@@ -29,6 +35,9 @@ impl Dict<Token>{
         Dict{
             map:HashMap::new(),
         }
+    }
+    pub fn push(&mut self,key:String, val:Token){
+        self.map.insert(key,val);
     }
 }
 
@@ -53,6 +62,8 @@ pub fn read_token(buf_reader: &mut BufReader<File>) -> Result<Token, Error> {
             buf_reader.seek(SeekFrom::Current(-1));
         }
     }
+    let mut last_is_bth =false;
+    let mut last_is_lth = false;
     loop {
         match buf_reader.read(&mut buf) {
             Ok(n) => ch = buf[0],
@@ -62,14 +73,34 @@ pub fn read_token(buf_reader: &mut BufReader<File>) -> Result<Token, Error> {
             b'%' => skip_comment(buf_reader),
             b'/' => {
                 let t = read_name(buf_reader);
-                println!("{:?}", t);
-                return t;
+                // println!("{:?}", t);
+                match t{
+                    Ok(s)=> return Ok(Token::NAME(s)),
+                    Err(e)=>return Err(e),
+                };
+            }
+            b'<' =>{
+                if last_is_lth{
+                    return Ok(Token::DICT_BEGIN);
+                }else{
+                    last_is_lth = true;
+                }
+            }
+            b'>' =>{
+                if last_is_bth{
+                    return Ok(Token::DICT_END);
+                }else{
+                    last_is_bth = true;
+                }
             }
             _ => {
                  buf_reader.seek(SeekFrom::Current(-1));
                   let t = read_name(buf_reader);
-                println!("_{:?}", t);
-                return t;
+                //println!("_{:?}", t);
+                match t{
+                    Ok(s) => return to_token(s),
+                    Err(e)=>return Err(e),
+                }
             },
         }
     }
@@ -77,7 +108,26 @@ pub fn read_token(buf_reader: &mut BufReader<File>) -> Result<Token, Error> {
 
     Ok(Token::None)
 }
-
+fn to_token(s :String)->Result<Token,Error>{
+    if s== "true" {
+        return Ok(Token::BOOL(true));
+    }else if s=="false" {
+        return Ok(Token::BOOL(false));
+    }else if s=="null" {
+        return Ok(Token::NULL);
+    }else if s=="obj" {
+        return Ok(Token::OBJ_BEGIN);
+    }else if s=="endobj" {
+        return Ok(Token::OBJ_END);
+    }else if s=="stream" {
+        return Ok(Token::STREAM_BEGIN);
+    }else if s=="endstream" {
+        return Ok(Token::STREAM_END);
+    }else if s=="R" {
+        return Ok(Token::R);
+    }
+    return Err(Error::new(ErrorKind::Other, ""));
+}
 pub fn read_number(buf_reader: &mut BufReader<File>) -> Result<Token, Error> {
     let mut num_buf: Vec<u8> = Vec::with_capacity(128);
     let mut is_real =false;
@@ -114,7 +164,8 @@ pub fn read_number(buf_reader: &mut BufReader<File>) -> Result<Token, Error> {
    
     Ok(Token::INTEGER(0))
 }
-pub fn read_name(buf_reader: &mut BufReader<File>) -> Result<Token, Error> {
+
+pub fn read_name(buf_reader: &mut BufReader<File>) -> Result<String, Error> {
     let mut name_buf: Vec<u8> = Vec::with_capacity(128);
 
     let mut buf: [u8; 1] = [0];
@@ -124,6 +175,10 @@ pub fn read_name(buf_reader: &mut BufReader<File>) -> Result<Token, Error> {
         let c = buf[0];
         match c {
             c if is_white(c) => break,
+            c if is_delimiter(c) => {
+                buf_reader.seek(SeekFrom::Current(-1));
+                break;
+                },
             b'#' => hex = true,
             _ => {
                 if hex {
@@ -142,7 +197,7 @@ pub fn read_name(buf_reader: &mut BufReader<File>) -> Result<Token, Error> {
         // }
     }
     match String::from_utf8(name_buf) {
-        Ok(s) => Ok(Token::NAME(s)),
+        Ok(s) => Ok(s),
         Err(_) => Err(Error::new(ErrorKind::Other, "utf8_to_str")),
     }
 
@@ -166,14 +221,30 @@ pub fn skip_white(buf_reader: &mut BufReader<File>) {
     }
 }
 pub fn is_white(ch: u8) -> bool {
-    let ret = match ch {
+    match ch {
         b' ' => true,
         b'\n' => true,
         b'\r' => true,
         b'\t' => true,
         _ => false,
-    };
-    ret
+    }
+}
+
+fn is_delimiter(c :u8)->bool{
+    // 空白，
+    match c{
+        b'('=>true,
+        b')'=>true,
+        b'<'=>true,
+        b'>'=>true,
+        b'['=>true,
+        b']'=>true,
+        b'{'=>true,
+        b'}'=>true,
+        b'/'=>true,
+        b'%'=>true,
+        _ => false,
+    }
 }
 
 pub fn is_number(ch: u8) -> bool {
