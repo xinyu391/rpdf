@@ -132,7 +132,7 @@ impl Pdf {
 fn read_objects(pdf: &mut Pdf, buf_reader: &mut BufReader<File>) {
     for obj in &pdf.obj_list {
         println!("{:?}", obj);
-        if obj.used{
+        if obj.used {
             buf_reader.seek(SeekFrom::Start(obj.offset as u64));
             read_object(buf_reader);
         }
@@ -150,36 +150,29 @@ fn read_trailer(pdf: &mut Pdf, buf_reader: &mut BufReader<File>) -> io::Result<u
 fn read_object(buf_reader: &mut BufReader<File>) {
     // buf_reader.read_until(b'\n', &mut buf);
     let delim = [b'\n', b'\r'];
-    if let  Ok(line) = read_until(buf_reader, &delim){
+    if let Ok(line) = read_until(buf_reader, &delim) {
         println!("{}", line);
         //read until endobj
-        if let Ok(Token::DICT_BEGIN) = read_token(buf_reader){
+        if let Token::DICT_BEGIN = read_token(buf_reader) {
             let dict = read_dictonary(buf_reader);
-            println!("{:?}",dict);
-            let  end_line = read_until(buf_reader, &delim);
-            println!("{:?}",end_line);
-            panic!("????");
-        }else{
-            
+            println!("xx {:?}", dict);
+            let end_line = read_token(buf_reader);
+            println!("should get endobj:{:?}", end_line);
+        // panic!("????");
+        } else {
         }
     }
-
 }
 
-fn read_until(
-    buf_reader: &mut BufReader<File>,
-    delim: &[u8]
-) -> io::Result<String> {
-    
+fn read_until(buf_reader: &mut BufReader<File>, delim: &[u8]) -> io::Result<String> {
     let mut buf: [u8; 1] = [0];
 
     let mut vec_buf = Vec::new();
-    let mut count: usize = 0;
     loop {
         if let Ok(1) = buf_reader.read(&mut buf) {
-            count += 1;
             let ch = buf[0];
             for v in delim {
+                println!("{}  >>> {} ",ch, *v);
                 if ch == *v {
                     let line = String::from_utf8(vec_buf).unwrap();
                     return Ok(line);
@@ -187,7 +180,7 @@ fn read_until(
             }
             vec_buf.push(ch);
         } else {
-            return Err(Error::new(ErrorKind::Other,"read error"));
+            return Err(Error::new(ErrorKind::Other, "read error"));
         }
     }
 }
@@ -206,25 +199,25 @@ fn read_dictonary(buf_reader: &mut BufReader<File>) -> io::Result<Dict> {
         println!("{:?}", tk);
         if !check_dict_begin {
             check_dict_begin = true;
-            if let Ok(Token::DICT_BEGIN) = tk {
+            if let Token::DICT_BEGIN = tk {
                 continue;
             }
         }
-        if let Ok(Token::DICT_END) = tk {
+        if let Token::DICT_END = tk {
             break;
         }
-        if let Ok(Token::NAME(key)) = tk {
+        if let Token::NAME(key) = tk {
             //read value
             let tk = read_token(buf_reader);
             match tk {
-                Ok(Token::INTEGER(n)) => {
+                Token::INTEGER(n) => {
                     // 偷窥下一个token
                     let tk2 = peek_token(buf_reader);
                     match tk2 {
-                        Ok(Token::INTEGER(n2)) => {
+                        Token::INTEGER(n2) => {
                             // shoule is REF, we read next Token "R"
                             let tk = read_token(buf_reader); // peek to read
-                            if let Ok(Token::R) = read_token(buf_reader) {
+                            if let Token::R = read_token(buf_reader) {
                                 dict.push(key, Value::REF(n, n2));
                             } else {
                                 //error
@@ -235,30 +228,30 @@ fn read_dictonary(buf_reader: &mut BufReader<File>) -> io::Result<Dict> {
                         }
                     }
                 }
-                Ok(Token::BOOL(b)) => {
+                Token::BOOL(b) => {
                     dict.push(key, Value::BOOL(b));
                 }
-                Ok(Token::STRING(s)) => {
+                Token::STRING(s) => {
                     dict.push(key, Value::STRING(s));
                 }
-                Ok(Token::ARRAY_BEGIN) => {
+                Token::ARRAY_BEGIN => {
                     let value = read_array(buf_reader);
                     dict.push(key, Value::ARRAY(value));
                 }
-                Ok(Token::DICT_BEGIN) => {
+                Token::DICT_BEGIN => {
                     if let Ok(value) = read_dictonary(buf_reader) {
                         dict.push(key, Value::DICT(value));
                     } else {
                         // TODO
                     }
                 }
-                Ok(Token::NULL) => {
+                Token::NULL => {
                     dict.push(key, Value::NULL);
                 }
-                Ok(Token::FLOAT(v)) => {
+                Token::FLOAT(v) => {
                     dict.push(key, Value::FLOAT(v));
                 }
-                Ok(Token::NAME(v)) => {
+                Token::NAME(v) => {
                     dict.push(key, Value::NAME(v));
                 }
                 _ => {}
@@ -276,33 +269,33 @@ fn read_array(buf_reader: &mut BufReader<File>) -> Vec<Value> {
     loop {
         let tk = read_token(buf_reader);
         match tk {
-            Ok(Token::ARRAY_END) => {
+            Token::ARRAY_END => {
                 break;
             }
-            Ok(Token::INTEGER(v)) => {
+            Token::INTEGER(v) => {
                 array.push(Value::INTEGER(v));
             }
-            Ok(Token::FLOAT(v)) => {
+            Token::FLOAT(v) => {
                 array.push(Value::FLOAT(v));
             }
-            Ok(Token::STRING(v)) => {
+            Token::STRING(v) => {
                 array.push(Value::STRING(v));
             }
-            Ok(Token::NAME(v)) => {
+            Token::NAME(v) => {
                 array.push(Value::NAME(v));
             }
-            Ok(Token::BOOL(v)) => {
+            Token::BOOL(v) => {
                 array.push(Value::BOOL(v));
             }
-            Ok(Token::NULL) => {
+            Token::NULL => {
                 array.push(Value::NULL);
             }
-            Ok(Token::ARRAY_BEGIN) => {
+            Token::ARRAY_BEGIN => {
                 let val = read_array(buf_reader);
                 array.push(Value::ARRAY(val));
             }
 
-            Err(_) => {
+            Token::ERROR(e) => {
                 //TODO
                 break;
             }
