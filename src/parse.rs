@@ -6,7 +6,6 @@ use std::io::prelude::*;
 use std::io::BufReader;
 use std::io::SeekFrom;
 use std::io::{Error, ErrorKind};
-
 #[derive(Debug)]
 pub enum Token {
     None,
@@ -81,8 +80,10 @@ pub struct Stream {
 }
 impl Stream {
     pub fn new(data: Vec<u8>) -> Self {
-        println!("ssssssssstream {}", data.len());
         Stream { data }
+    }
+    pub fn decode(&mut self){
+
     }
 }
 impl fmt::Debug for Stream {
@@ -254,7 +255,7 @@ pub fn read_hex_string(buf_reader: &mut BufReader<File>) -> Token {
 }
 pub fn read_string(buf_reader: &mut BufReader<File>) -> Token {
     let mut name_buf: Vec<u8> = Vec::new();
-    name_buf.push(b'(');
+    // name_buf.push(b'(');
     let mut count: u32 = 1;
     loop {
         // read until to ')'
@@ -310,11 +311,11 @@ pub fn read_string(buf_reader: &mut BufReader<File>) -> Token {
                     }
                     b'(' => count += 1,
                     b')' => {
-                        name_buf.push(c);
                         count -= 1;
                         if count == 0 {
                             break;
                         }
+                        name_buf.push(c);
                     }
                     _ => {
                         name_buf.push(c);

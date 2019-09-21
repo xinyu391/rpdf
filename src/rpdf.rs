@@ -49,7 +49,7 @@ impl Pdf {
             obj_list: Vec::new(),
         }
     }
-    pub fn open(path: &'static str) -> io::Result<Pdf> {
+    pub fn open(path: & str) -> io::Result<Pdf> {
         let mut file = File::open(path).unwrap();
         println!("{:?}", file);
         let len: u64 = match file.seek(SeekFrom::End(0)) {
@@ -59,15 +59,13 @@ impl Pdf {
         println!("file length {}", len);
         file.seek(SeekFrom::Start(0));
         let mut buf_reader = BufReader::new(file);
-        let mut buf: Vec<u8> = Vec::with_capacity(10);
-        buf_reader.read_until(b'\n', &mut buf);
-
-        let len = buf.len() - 1;
-        buf[len] = b'\0';
-        let ver = String::from_utf8(buf).unwrap(); //str::from_utf8(&buf).unwrap();
-        println!("version {}. {}", ver, ver.len());
-        if &ver[0..5] == "%PDF-" {
-            println!("match {}", &ver[5..]);
+        // let n = buf_reader.read_line(&mut ver);
+        let eol = [b'\n',b'\r'];
+        if let Ok(ver) = read_until(&mut buf_reader, &eol){
+            println!("ver {}",ver);
+            if &ver[0..5] == "%PDF-" {
+                println!("match {}", &ver[5..]);
+            }
         }
         // startxref
         buf_reader.seek(SeekFrom::End(-32));
@@ -83,7 +81,7 @@ impl Pdf {
                 ref_offset = buffer.trim().parse().expect("??");
                 break;
             }
-            println!("{}", buffer);
+            // println!("{}", buffer);
         }
         println!("ref_start_oos {}", ref_offset);
         if ref_offset == 0 {
@@ -152,35 +150,34 @@ fn read_trailer(pdf: &mut Pdf, buf_reader: &mut BufReader<File>) -> io::Result<u
 
 // obj ...  endobj
 fn read_object(buf_reader: &mut BufReader<File>, obj: &mut Obj) {
-    // buf_reader.read_until(b'\n', &mut buf);
-    let delim = [b'\n', b'\r'];
-    // n 0 obj
-    if let Ok(line) = read_until(buf_reader, &delim) {
-        println!("{}", line);
-        //read until endobj
-        if let Token::DICT_BEGIN = read_token(buf_reader) {
-            if let Ok(dict) = read_dictonary(buf_reader) {
-                match read_token(buf_reader) {
-                    Token::OBJ_END => {}
-                    Token::STREAM_BEGIN => {
-                        if let Some(val) = dict.get("Length") {
-                            if let Value::INTEGER(len) = val {
-                                if let Ok(stream) = read_stream(buf_reader, *len as usize) {
-                                    obj.stream = Some(stream);
-                                } else {
-                                    println!("what's wrong?");
+    if let Token::INTEGER(oid) = read_token(buf_reader) {
+        if let Token::INTEGER(gid) = read_token(buf_reader) {
+            if let Token::OBJ_BEGIN = read_token(buf_reader) {
+                println!("{} {} obj", oid, gid);
+                if let Token::DICT_BEGIN = read_token(buf_reader) {
+                    if let Ok(dict) = read_dictonary(buf_reader) {
+                        match read_token(buf_reader) {
+                            Token::OBJ_END => {}
+                            Token::STREAM_BEGIN => {
+                                if let Some(val) = dict.get("Length") {
+                                    if let Value::INTEGER(len) = val {
+                                        if let Ok(stream) = read_stream(buf_reader, *len as usize) {
+                                            obj.stream = Some(stream);
+                                        } else {
+                                            println!("what's wrong?");
+                                        }
+                                    }
                                 }
                             }
+                            _ => {
+                                println!("should get endobj:");
+                            }
                         }
+                        obj.dict = Some(dict);
                     }
-                    _ => {
-                        println!("should get endobj:");
-                    }
+                    // panic!("????");
                 }
-                obj.dict = Some(dict);
             }
-        // panic!("????");
-        } else {
         }
     }
 }
