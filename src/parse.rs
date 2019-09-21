@@ -1,6 +1,6 @@
 use std::collections::HashMap;
+use std::fmt;
 use std::fs::File;
-
 use std::io;
 use std::io::prelude::*;
 use std::io::BufReader;
@@ -29,20 +29,23 @@ pub enum Token {
     ERROR(ParseError),
 }
 #[derive(Debug)]
-pub struct ParseError{
-    msg :String
+pub struct ParseError {
+    msg: String,
 }
-impl ParseError{
-    pub fn new(msg:&str)->Self{
-        ParseError{msg:String::from(msg)}
+impl ParseError {
+    pub fn new(msg: &str) -> Self {
+        ParseError {
+            msg: String::from(msg),
+        }
     }
 }
-impl From<io::Error> for ParseError{
-    fn from(err:io::Error)-> ParseError{
-        ParseError{msg:String::from("")}
+impl From<io::Error> for ParseError {
+    fn from(err: io::Error) -> ParseError {
+        ParseError {
+            msg: String::from(""),
+        }
     }
-} 
-
+}
 
 #[derive(Debug)]
 pub enum Value {
@@ -69,8 +72,26 @@ impl Dict {
     pub fn push(&mut self, key: String, val: Value) {
         self.map.insert(key, val);
     }
+    pub fn get(&self, key: &str) -> Option<&Value> {
+        self.map.get(key)
+    }
 }
-pub fn peek_token(buf_reader: &mut BufReader<File>) -> Token{
+pub struct Stream {
+    data: Vec<u8>,
+}
+impl Stream {
+    pub fn new(data: Vec<u8>) -> Self {
+        println!("ssssssssstream {}", data.len());
+        Stream { data }
+    }
+}
+impl fmt::Debug for Stream {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Stream{{{} bytes}}", self.data.len())
+    }
+}
+
+pub fn peek_token(buf_reader: &mut BufReader<File>) -> Token {
     if let Ok(pos) = buf_reader.seek(SeekFrom::Current(0)) {
         let tk = read_token(buf_reader);
         buf_reader.seek(SeekFrom::Start(pos));
@@ -88,66 +109,60 @@ fn read_byte(buf_reader: &mut BufReader<File>) -> Result<u8, ParseError> {
 }
 // lexer
 pub fn read_token(buf_reader: &mut BufReader<File>) -> Token {
-
-    loop{
-        match read_byte(buf_reader){
-            Ok(c)=>{
-                match c{
-                    c if is_white(c) => {skip_white(buf_reader);},
-                    b'%' =>skip_comment(buf_reader),
+    loop {
+        match read_byte(buf_reader) {
+            Ok(c) => {
+                match c {
+                    c if is_white(c) => {
+                        skip_white(buf_reader);
+                    }
+                    b'%' => skip_comment(buf_reader),
                     b'/' => {
                         return read_name(buf_reader);
                     }
-                    b'<' =>{
-                        if let Ok(b'<') = read_byte(buf_reader){
+                    b'<' => {
+                        if let Ok(b'<') = read_byte(buf_reader) {
                             return Token::DICT_BEGIN;
-                        }else{
+                        } else {
                             buf_reader.seek(SeekFrom::Current(-1));
                             return read_hex_string(buf_reader);
                         }
                     }
-                    b'>' =>{
-                        match  read_byte(buf_reader){
-                            Ok(b'>') =>{
-                                return Token::DICT_END;
-                            }
-                            Err(e) =>{
-                                return Token::ERROR(e);
-                            }
-                            _ =>{
-                                buf_reader.seek(SeekFrom::Current(-1));
-                            }
+                    b'>' => match read_byte(buf_reader) {
+                        Ok(b'>') => {
+                            return Token::DICT_END;
                         }
-                    }
+                        Err(e) => {
+                            return Token::ERROR(e);
+                        }
+                        _ => {
+                            buf_reader.seek(SeekFrom::Current(-1));
+                        }
+                    },
                     b'(' => return read_string(buf_reader),
                     b')' => {
                         // should no be here
                         panic!("should not be herer");
                     }
-                    b'[' =>return Token::ARRAY_BEGIN,
-                    b']' =>return Token::ARRAY_BEGIN,
-                    c if is_number(c) =>return read_number(buf_reader, c),
-                    _=>{
+                    b'[' => return Token::ARRAY_BEGIN,
+                    b']' => return Token::ARRAY_END,
+                    c if is_number(c) => return read_number(buf_reader, c),
+                    _ => {
                         //what ?
                         buf_reader.seek(SeekFrom::Current(-1));
-                        println!(" helll no ");
-                        if let Token::NAME(s)= read_name(buf_reader){
-
-                            println!(" helll no {}",s);
+                        if let Token::NAME(s) = read_name(buf_reader) {
                             return to_token(s);
-                        }else{
+                        } else {
                             return Token::ERROR(ParseError::new("whate hell? "));
                         }
                     }
-
                 }
             }
-            Err(e)=> return Token::ERROR(e),
+            Err(e) => return Token::ERROR(e),
         }
     }
-
 }
-fn to_token(s: String) -> Token{
+fn to_token(s: String) -> Token {
     if s == "true" {
         return Token::BOOL(true);
     } else if s == "false" {
@@ -167,116 +182,146 @@ fn to_token(s: String) -> Token{
     }
     return Token::ERROR(ParseError::new("to_token"));
 }
-pub fn read_number(buf_reader: &mut BufReader<File>, c :u8) -> Token {
+pub fn read_stream(buf_reader: &mut BufReader<File>, size: usize) -> Result<Stream, ParseError> {
+    let mut buf: Vec<u8> = Vec::with_capacity(size);
+    buf.resize(size, 0);
+    match buf_reader.read_exact(buf.as_mut_slice()) {
+        Ok(()) => Ok(Stream::new(buf)),
+        Err(e) => Err(ParseError::new("read error")),
+    }
+}
+pub fn read_number(buf_reader: &mut BufReader<File>, c: u8) -> Token {
     let mut num_buf: Vec<u8> = Vec::with_capacity(128);
     let mut is_real = false;
     num_buf.push(c);
-    if c == b'.'{
-        is_real  = true;
+    if c == b'.' {
+        is_real = true;
     }
     loop {
-
-        match read_byte(buf_reader){
-            Ok(c)=>{
-                match c{
-                    c if is_white(c) =>break,
-                    c if is_delimiter(c) =>{
-                         buf_reader.seek(SeekFrom::Current(-1));
-                        break;
-                    }
-                    b'.' =>{
-                        is_real = true;
-                        num_buf.push(c);
-                    }
-                    c if is_number(c) =>{
-                        num_buf.push(c);
-                    }
-                    _ =>{
-                        return Token::ERROR(ParseError::new("wrong number")); 
-                    }
+        match read_byte(buf_reader) {
+            Ok(c) => match c {
+                c if is_white(c) => break,
+                c if is_delimiter(c) => {
+                    buf_reader.seek(SeekFrom::Current(-1));
+                    break;
                 }
-            }   
-            Err(e)=>{
+                b'.' => {
+                    is_real = true;
+                    num_buf.push(c);
+                }
+                c if is_number(c) => {
+                    num_buf.push(c);
+                }
+                _ => {
+                    return Token::ERROR(ParseError::new("wrong number"));
+                }
+            },
+            Err(e) => {
                 return Token::ERROR(ParseError::new("wrong number"));
-            } 
+            }
         }
     }
     // parse number
     match String::from_utf8(num_buf) {
         Ok(s) => {
-            println!("xxxxxx read number -> {}",s);
+            // println!("xxxxxx read number -> {}", s);
             if is_real {
                 let dr = s.parse::<f64>();
                 if let Ok(n) = dr {
-                    return   Token::FLOAT(n);
+                    return Token::FLOAT(n);
                 }
             } else {
                 let dr = s.parse::<i32>();
                 if let Ok(n) = dr {
-                    return  Token::INTEGER(n);
+                    return Token::INTEGER(n);
                 }
             }
             return Token::ERROR(ParseError::new("from_utf8 read_number"));
         }
-        Err(_) =>   Token::ERROR(ParseError::new("from_utf8")),
+        Err(_) => Token::ERROR(ParseError::new("from_utf8")),
     }
 }
 
-
 pub fn read_hex_string(buf_reader: &mut BufReader<File>) -> Token {
-    let s = String::new();
-    Token::STRING(s)
+    // read until >
+    let mut buf: Vec<u8> = Vec::new();
+    if let Ok(n) = buf_reader.read_until(b'>', &mut buf) {
+        if let Ok(s) = String::from_utf8(buf) {
+            return Token::STRING(s);
+        }
+    }
+    Token::ERROR(ParseError::new("read_hex_string from_utf8"))
 }
 pub fn read_string(buf_reader: &mut BufReader<File>) -> Token {
     let mut name_buf: Vec<u8> = Vec::new();
-
-    let mut buf: [u8; 1] = [0];
-    let mut hex = false;
-    let mut backslash = false;
-
-    skip_white(buf_reader);
-    if let Ok(1) = buf_reader.read(&mut buf) {
-        let c = buf[0];
-        match c {
-            b'(' => {
-                name_buf.push(c);
-            }
-            b'<' => {
-                name_buf.push(c);
-                hex = true;
-            }
-            b'R' => {
-                return Token::STRING(String::from("R"));
-            }
-            _ => {
-                panic!("wrong char read_string {}", c);
-            }
-        }
-    } else {
-        return Token::ERROR(ParseError::new("read error in read_string"));
-    }
+    name_buf.push(b'(');
+    let mut count: u32 = 1;
     loop {
         // read until to ')'
-        if let Ok(1) = buf_reader.read(&mut buf) {
-            let c = buf[0];
-            // println!("{}",c);
-            match c {
-                b'\\' => {
-                    // 转义
-                    backslash = true;
-                }
-                c if backslash => {
-                    name_buf.push(c);
-                    backslash = false;
-                }
-                b')' => {
-                    name_buf.push(c);
-                    break;
-                }
-                _ => {
-                    name_buf.push(c);
+        match read_byte(buf_reader) {
+            Ok(c) => {
+                match c {
+                    b'\\' => {
+                        //blackslash
+                        if let Ok(c1) = read_byte(buf_reader) {
+                            match c1 {
+                                b'n' => name_buf.push(b'\n'),
+                                b'r' => name_buf.push(b'\r'),
+                                b't' => name_buf.push(b'\t'),
+                                b'b' => {
+                                    name_buf.pop();
+                                }
+                                b'\n' => (),
+                                b'\r' => (),
+                                b'f' => {
+                                    // TODO ??? ignore.
+                                    //    name_buf.push(b'\f'),
+                                }
+                                b'(' => name_buf.push(b'('),
+                                b')' => name_buf.push(b')'),
+                                b'\\' => name_buf.push(c1),
+                                b'0'...b'7' => {
+                                    // todo at most three number 0-7
+                                    if let Ok(c2) = read_byte(buf_reader) {
+                                        match c2 {
+                                            b'0'...b'7' => {
+                                                if let Ok(c3) = read_byte(buf_reader) {
+                                                    match c3 {
+                                                        b'0'...b'7' => {
+                                                            // combine c1 c2 c3
+                                                        }
+                                                        _ => {
+                                                            buf_reader.seek(SeekFrom::Current(-1));
+                                                            // c1 c2 TODO
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            _ => {
+                                                buf_reader.seek(SeekFrom::Current(-1));
+                                                // c1
+                                            }
+                                        }
+                                    }
+                                }
+                                _ => (), // should not be here ignore
+                            }
+                        }
+                    }
+                    b'(' => count += 1,
+                    b')' => {
+                        name_buf.push(c);
+                        count -= 1;
+                        if count == 0 {
+                            break;
+                        }
+                    }
+                    _ => {
+                        name_buf.push(c);
+                    }
                 }
             }
+            Err(e) => {}
         }
     }
     match String::from_utf8(name_buf) {
@@ -288,34 +333,34 @@ pub fn read_name(buf_reader: &mut BufReader<File>) -> Token {
     let mut name_buf: Vec<u8> = Vec::with_capacity(128);
 
     loop {
-        match read_byte(buf_reader){
-            Ok(c)=> {
-                match c{
-                    c if is_white(c) =>break,
-                    c if is_delimiter(c) =>{
-                         buf_reader.seek(SeekFrom::Current(-1));
+        match read_byte(buf_reader) {
+            Ok(c) => {
+                match c {
+                    c if is_white(c) => break,
+                    c if is_delimiter(c) => {
+                        buf_reader.seek(SeekFrom::Current(-1));
                         break;
                     }
 
-                    b'#'=>{
-                            //read two byte
-                            if let Ok(c0) = read_byte(buf_reader){
-                                 if let Ok(c1) = read_byte(buf_reader){
-                                     // c0,c1 -> c
-                                      if let Ok(c0) = hex_to_char(c0){
-                                          if let Ok(c1)= hex_to_char(c1){
-                                            name_buf.push(c0+c1);
-                                            continue;
-                                          }
-                                      }
-                                 }
+                    b'#' => {
+                        //read two byte
+                        if let Ok(c0) = read_byte(buf_reader) {
+                            if let Ok(c1) = read_byte(buf_reader) {
+                                // c0,c1 -> c
+                                if let Ok(c0) = hex_to_char(c0) {
+                                    if let Ok(c1) = hex_to_char(c1) {
+                                        name_buf.push(c0 + c1);
+                                        continue;
+                                    }
+                                }
                             }
-                            break;
+                        }
+                        break;
                     }
                     _ => name_buf.push(c),
                 }
             }
-            Err(e)=>{
+            Err(e) => {
                 break;
             }
         }
@@ -327,17 +372,27 @@ pub fn read_name(buf_reader: &mut BufReader<File>) -> Token {
 
     // Ok(Token::NAME(s))
 }
-fn  hex_to_char(c0:u8)->Result<u8,ParseError>{
-
-    match c0{
-        b'0'...b'9' => Ok(c0- b'0'), 
-        b'a'...b'z' =>  Ok(c0- b'a'+ 10),
-        b'A'...b'Z' =>  Ok(c0- b'A'+ 10),
+fn hex_to_char(c0: u8) -> Result<u8, ParseError> {
+    match c0 {
+        b'0'...b'9' => Ok(c0 - b'0'),
+        b'a'...b'z' => Ok(c0 - b'a' + 10),
+        b'A'...b'Z' => Ok(c0 - b'A' + 10),
         _ => Err(ParseError::new("not hex ")),
     }
 }
 pub fn skip_comment(buf_reader: &mut BufReader<File>) {
-    //TODO
+    // read until end of line
+    let mut buf: [u8; 1] = [0];
+    loop {
+        match buf_reader.read(&mut buf) {
+            Ok(1) => match buf[0] {
+                b'\n' => break,
+                b'\r' => break,
+                _ => (),
+            },
+            _ => break,
+        }
+    }
 }
 pub fn skip_white(buf_reader: &mut BufReader<File>) {
     let mut buf: [u8; 1] = [0];
@@ -354,12 +409,14 @@ pub fn skip_white(buf_reader: &mut BufReader<File>) {
     }
 }
 //'\x00':case'\x09':case'\x0a':case'\x0c':case'\x0d':case'\x20'
- pub fn is_white(ch: u8) -> bool {
+pub fn is_white(ch: u8) -> bool {
     match ch {
-        b' ' => true,
-        b'\n' => true,
-        b'\r' => true,
+        b'\0' => true,
         b'\t' => true,
+        b'\r' => true,
+        0x0c => true, // form feed 换页符号
+        b'\n' => true,
+        b' ' => true,
         _ => false,
     }
 }

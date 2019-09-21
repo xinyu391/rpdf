@@ -18,6 +18,8 @@ struct Obj {
     genid: u32,
     used: bool,
     // box real data
+    dict: Option<Dict>,
+    stream: Option<Stream>,
 }
 impl Obj {
     fn new(id: u32, offset: u32, genid: u32, used: bool) -> Obj {
@@ -26,6 +28,8 @@ impl Obj {
             offset,
             genid,
             used,
+            dict: None,
+            stream: None,
         }
     }
     fn fill() -> bool {
@@ -130,11 +134,11 @@ impl Pdf {
     }
 }
 fn read_objects(pdf: &mut Pdf, buf_reader: &mut BufReader<File>) {
-    for obj in &pdf.obj_list {
+    for obj in &mut pdf.obj_list {
         println!("{:?}", obj);
         if obj.used {
             buf_reader.seek(SeekFrom::Start(obj.offset as u64));
-            read_object(buf_reader);
+            read_object(buf_reader, obj);
         }
     }
 }
@@ -147,17 +151,34 @@ fn read_trailer(pdf: &mut Pdf, buf_reader: &mut BufReader<File>) -> io::Result<u
 }
 
 // obj ...  endobj
-fn read_object(buf_reader: &mut BufReader<File>) {
+fn read_object(buf_reader: &mut BufReader<File>, obj: &mut Obj) {
     // buf_reader.read_until(b'\n', &mut buf);
     let delim = [b'\n', b'\r'];
+    // n 0 obj
     if let Ok(line) = read_until(buf_reader, &delim) {
         println!("{}", line);
         //read until endobj
         if let Token::DICT_BEGIN = read_token(buf_reader) {
-            let dict = read_dictonary(buf_reader);
-            println!("xx {:?}", dict);
-            let end_line = read_token(buf_reader);
-            println!("should get endobj:{:?}", end_line);
+            if let Ok(dict) = read_dictonary(buf_reader) {
+                match read_token(buf_reader) {
+                    Token::OBJ_END => {}
+                    Token::STREAM_BEGIN => {
+                        if let Some(val) = dict.get("Length") {
+                            if let Value::INTEGER(len) = val {
+                                if let Ok(stream) = read_stream(buf_reader, *len as usize) {
+                                    obj.stream = Some(stream);
+                                } else {
+                                    println!("what's wrong?");
+                                }
+                            }
+                        }
+                    }
+                    _ => {
+                        println!("should get endobj:");
+                    }
+                }
+                obj.dict = Some(dict);
+            }
         // panic!("????");
         } else {
         }
@@ -172,7 +193,7 @@ fn read_until(buf_reader: &mut BufReader<File>, delim: &[u8]) -> io::Result<Stri
         if let Ok(1) = buf_reader.read(&mut buf) {
             let ch = buf[0];
             for v in delim {
-                println!("{}  >>> {} ",ch, *v);
+                // println!("{}  >>> {} ",ch, *v);
                 if ch == *v {
                     let line = String::from_utf8(vec_buf).unwrap();
                     return Ok(line);
@@ -265,6 +286,7 @@ fn read_dictonary(buf_reader: &mut BufReader<File>) -> io::Result<Dict> {
 
 fn read_array(buf_reader: &mut BufReader<File>) -> Vec<Value> {
     // TODO
+    println!("read_array");
     let mut array: Vec<Value> = Vec::new();
     loop {
         let tk = read_token(buf_reader);
@@ -294,13 +316,25 @@ fn read_array(buf_reader: &mut BufReader<File>) -> Vec<Value> {
                 let val = read_array(buf_reader);
                 array.push(Value::ARRAY(val));
             }
-
+            Token::R => {
+                if let Some(Value::INTEGER(n1)) = array.pop() {
+                    if let Some(Value::INTEGER(n0)) = array.pop() {
+                        array.push(Value::REF(n0, n1));
+                    } else {
+                        // error
+                        panic!("not a REF");
+                    }
+                } else {
+                    // error
+                    panic!("not a REF");
+                }
+            }
             Token::ERROR(e) => {
                 //TODO
                 break;
             }
             _ => {
-                panic!("should no be here");
+                panic!("should no be here {:?}", tk);
             }
         }
     }
