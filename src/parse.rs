@@ -76,7 +76,7 @@ impl Dict {
     }
 }
 pub struct Stream {
-    data: Vec<u8>,
+    pub data: Vec<u8>,
 }
 impl Stream {
     pub fn new(data: Vec<u8>) -> Self {

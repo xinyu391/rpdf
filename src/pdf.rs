@@ -7,6 +7,8 @@ use std::io::{Error, ErrorKind};
 use std::str;
 use std::vec::*;
 
+extern crate inflate;
+
 #[path = "parse.rs"]
 mod parse;
 use parse::*;
@@ -161,7 +163,20 @@ fn read_object(buf_reader: &mut BufReader<File>, obj: &mut Obj) {
                             Token::STREAM_BEGIN => {
                                 if let Some(val) = dict.get("Length") {
                                     if let Value::INTEGER(len) = val {
-                                        if let Ok(stream) = read_stream(buf_reader, *len as usize) {
+                                        if let Ok(mut stream) = read_stream(buf_reader, *len as usize) {
+                                            // decode stream
+                                            println!("len {}",len);
+                                            let fs = "FlateDecode".to_string();
+                                            if let Some(Value::NAME(fs)) = dict.get("Filter"){
+                                                if let Ok(mut decoded) = inflate::inflate_bytes_zlib(&stream.data[..]){
+                                                    let s = String::from_utf8(decoded);
+                                                println!("inflatexxxx xxx {:?}",s);
+                                                panic!("xx");
+                                                    // stream.data.clear();
+                                                    // stream.data.append(&mut decoded);
+
+                                                }
+                                            }
                                             obj.stream = Some(stream);
                                         } else {
                                             println!("what's wrong?");
