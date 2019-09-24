@@ -7,14 +7,19 @@ use std::io::{Error, ErrorKind};
 use std::str;
 use std::vec::*;
 
-
-#[path="filter.rs"]
+#[path = "filter.rs"]
 mod filter;
 use filter::*;
 
 #[path = "parse.rs"]
 mod parse;
 use parse::*;
+
+const PDF_NAME_Root: &str = "Root";
+const PDF_NAME_Type: &str = "Type";
+const PDF_NAME_Length: &str = "Length";
+const PDF_NAME_FlateDecode: &str = "FlateDecode";
+const PDF_NAME_Filter: &str = "Filter";
 
 #[derive(Debug)]
 struct Obj {
@@ -45,7 +50,7 @@ impl Obj {
 pub struct Pdf {
     version: String,
     obj_list: Vec<Obj>,
-    trailer : Option<Dict>,
+    trailer: Option<Dict>,
 }
 
 impl Pdf {
@@ -53,10 +58,10 @@ impl Pdf {
         Pdf {
             version: "".to_string(),
             obj_list: Vec::new(),
-            trailer:None,
+            trailer: None,
         }
     }
-    pub fn open(path: & str) -> io::Result<Pdf> {
+    pub fn open(path: &str) -> io::Result<Pdf> {
         let mut file = File::open(path).unwrap();
         println!("{:?}", file);
         let len: u64 = match file.seek(SeekFrom::End(0)) {
@@ -67,9 +72,9 @@ impl Pdf {
         file.seek(SeekFrom::Start(0));
         let mut buf_reader = BufReader::new(file);
         // let n = buf_reader.read_line(&mut ver);
-        let eol = [b'\n',b'\r'];
-        if let Ok(ver) = read_until(&mut buf_reader, &eol){
-            println!("ver {}",ver);
+        let eol = [b'\n', b'\r'];
+        if let Ok(ver) = read_until(&mut buf_reader, &eol) {
+            println!("ver {}", ver);
             if &ver[0..5] == "%PDF-" {
                 println!("match {}", &ver[5..]);
             }
@@ -139,26 +144,41 @@ impl Pdf {
         pdf.load_doc();
         Ok(pdf)
     }
-    fn load_doc(&mut self){
-        if let Some(trailer) = &self.trailer{
-            if let Some(Value::REF(n0,n1)) = trailer.get("Root"){
-                println!("Root ref {:?},{:?}",n0,n1);
+    fn load_doc(&mut self) {
+        if let Some(trailer) = &self.trailer {
+            if let Some(Value::REF(n0, n1)) = trailer.get(PDF_NAME_Root) {
+                println!("Root ref {:?},{:?}", n0, n1);
             }
         }
     }
 }
 
 fn read_objects(pdf: &mut Pdf, buf_reader: &mut BufReader<File>) {
+    let mut has_root = false; // TOOD pdf.trailer.
+    if let Some(trailer) = &pdf.trailer {
+        if let Some(Value::REF(n0, n1)) = trailer.get(PDF_NAME_Root) {
+            has_root = true;
+        }
+    }
     for obj in &mut pdf.obj_list {
         println!("{:?}", obj);
         if obj.used {
             buf_reader.seek(SeekFrom::Start(obj.offset as u64));
             read_object(buf_reader, obj);
+            if !has_root {
+                if let Some(dict) = &obj.dict {
+                    // try find root
+                    if let Some(n) = dict.get(PDF_NAME_Root) {
+                        // record root id TODO
+                        has_root = true;
+                    }
+                }
+            }
         }
     }
 }
 fn read_trailer(buf_reader: &mut BufReader<File>) -> Option<Dict> {
-    if let Ok(dict) = read_dictonary(buf_reader){
+    if let Ok(dict) = read_dictonary(buf_reader) {
         println!("trailer dict {:?}", dict);
         // read Info obj
         // read Root obj
@@ -178,37 +198,39 @@ fn read_object(buf_reader: &mut BufReader<File>, obj: &mut Obj) {
                         match read_token(buf_reader) {
                             Token::OBJ_END => {}
                             Token::STREAM_BEGIN => {
-                                if let Some(val) = dict.get("Length") {
+                                if let Some(val) = dict.get(PDF_NAME_Length) {
                                     if let Value::INTEGER(len) = val {
-                                        if let Ok(mut stream) = read_stream(buf_reader, *len as usize) {
+                                        if let Ok(mut stream) =
+                                            read_stream(buf_reader, *len as usize)
+                                        {
                                             // decode stream
-                                            println!("len {}",len);
-                                            let fs = String::from("FlateDecode");
-                                            match  dict.get("Filter"){
+                                            println!("len {}", len);
+                                            let fs = String::from(PDF_NAME_FlateDecode);
+                                            match dict.get(PDF_NAME_Filter) {
                                                 Some(Value::NAME(fs)) => {
-                                                    if let Ok(mut decoded) =decode_deflate(&stream.data[..], fs){
-                                                            // let s = String::from_utf8(decoded);
-                                                            // println!("inflatexxxx xxx {:?}",s);
-                                                            // panic!("xx");
-                                                            stream.data.clear();
-                                                            stream.data.append(&mut decoded);
-
-                                                        }
+                                                    if let Ok(mut decoded) =
+                                                        decode_deflate(&stream.data[..], fs)
+                                                    {
+                                                        // let s = String::from_utf8(decoded);
+                                                        // println!("inflatexxxx xxx {:?}",s);
+                                                        // panic!("xx");
+                                                        stream.data.clear();
+                                                        stream.data.append(&mut decoded);
+                                                    }
                                                 }
                                                 Some(Value::ARRAY(array)) => {
                                                     panic!("xxxxxxxxx");
                                                 }
-                                                Some(n)=>{
+                                                Some(n) => {
                                                     println!("xxxxxxxx {:?}", n);
                                                     panic!("xxxxxxxxx ");
                                                 }
-                                                None =>(),
-                                                _ =>{
-                                                     panic!("xxxxxxxxx");
+                                                None => (),
+                                                _ => {
+                                                    panic!("xxxxxxxxx");
                                                 }
                                             }
                                             // if let Some(Value::NAME(fs)) = dict.get("Filter"){
-                                                
                                             // }
                                             obj.stream = Some(stream);
                                         } else {
