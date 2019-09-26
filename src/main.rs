@@ -1,4 +1,3 @@
-mod pdf;
 mod parse;
 
 use rpdf;
@@ -7,12 +6,14 @@ use std::env;
 fn main() {
     let args: Vec<String> = env::args().collect();
 
+    let mut path = "readme.pdf";
+
     if args.len() > 1 {
-        let path = &args[1];
-        let pdf = rpdf::open(path.as_str());
+        path = &args[1].as_str();
+    }
+    if let Ok(pdf) = rpdf::open(path) {
         println!("{:?}", pdf);
-    } else {
-        let pdf = rpdf::open("readme.pdf");
-        println!("{:?}", pdf);
+        println!("page count: {:?}", pdf.page_count());
+        pdf.page_text(0);
     }
 }

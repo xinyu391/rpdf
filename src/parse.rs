@@ -46,7 +46,6 @@ impl From<io::Error> for ParseError {
     }
 }
 
-#[derive(Debug)]
 pub enum Value {
     INTEGER(i32),
     BOOL(bool),
@@ -58,10 +57,36 @@ pub enum Value {
     ARRAY(Vec<Value>),
     DICT(Dict),
 }
+
+impl fmt::Debug for Value{
+    fn fmt(&self, f:&mut fmt::Formatter<'_>)->fmt::Result{
+        // write!(f,"")
+        match self{
+            Value::INTEGER(v) => write!(f,"{}", v),
+            Value::BOOL(v) => write!(f,"{}", v),
+            Value::REF(v0, v1) =>write!(f,"{}_{}_R", v0,v1),
+            Value::NAME(v)=>write!(f,"/{}",v),
+            Value::STRING(v)=>write!(f,"\"{}\"",v),
+            Value::NULL =>write!(f,"null"),
+            Value::FLOAT(v)=>write!(f,"{}",v),
+            Value::ARRAY(v) =>write!(f,"{:?}",v),
+            Value::DICT(v)=>write!(f,"<<{:?}>>",v),
+        }
+    }
+}
 #[derive(Debug)]
 pub struct Dict {
     map: HashMap<String, Value>,
 }
+// impl fmt::Debug for Dict{
+//     fn fmt(&self, f:&mut fmt::Formatter<'_>)->fmt::Result{
+//         write!(f,"<<");
+//         for (key, value) in self.map{
+//             write!(f,"{}:{}",key, value);
+//         }
+//         write!(f,">>");
+//     }
+// }
 impl Dict {
     pub fn new() -> Self {
         Dict {
@@ -125,7 +150,7 @@ pub fn read_token(buf_reader: &mut BufReader<File>) -> Token {
                         if let Ok(b'<') = read_byte(buf_reader) {
                             return Token::DICT_BEGIN;
                         } else {
-                            buf_reader.seek(SeekFrom::Current(-1));
+                            unread_bytes(buf_reader, 1);
                             return read_hex_string(buf_reader);
                         }
                     }
@@ -137,7 +162,7 @@ pub fn read_token(buf_reader: &mut BufReader<File>) -> Token {
                             return Token::ERROR(e);
                         }
                         _ => {
-                            buf_reader.seek(SeekFrom::Current(-1));
+                            unread_bytes(buf_reader, 1);
                         }
                     },
                     b'(' => return read_string(buf_reader),
@@ -150,7 +175,7 @@ pub fn read_token(buf_reader: &mut BufReader<File>) -> Token {
                     c if is_number(c) => return read_number(buf_reader, c),
                     _ => {
                         //what ?
-                        buf_reader.seek(SeekFrom::Current(-1));
+                        unread_bytes(buf_reader, 1);
                         if let Token::NAME(s) = read_name(buf_reader) {
                             return to_token(s);
                         } else {
@@ -203,7 +228,7 @@ pub fn read_number(buf_reader: &mut BufReader<File>, c: u8) -> Token {
             Ok(c) => match c {
                 c if is_white(c) => break,
                 c if is_delimiter(c) => {
-                    buf_reader.seek(SeekFrom::Current(-1));
+                    unread_bytes(buf_reader, 1);
                     break;
                 }
                 b'.' => {
@@ -292,14 +317,14 @@ pub fn read_string(buf_reader: &mut BufReader<File>) -> Token {
                                                             // combine c1 c2 c3
                                                         }
                                                         _ => {
-                                                            buf_reader.seek(SeekFrom::Current(-1));
+                                                            unread_bytes(buf_reader, 1);
                                                             // c1 c2 TODO
                                                         }
                                                     }
                                                 }
                                             }
                                             _ => {
-                                                buf_reader.seek(SeekFrom::Current(-1));
+                                               unread_bytes(buf_reader, 1);
                                                 // c1
                                             }
                                         }
@@ -330,6 +355,9 @@ pub fn read_string(buf_reader: &mut BufReader<File>) -> Token {
         Err(_) => Token::ERROR(ParseError::new("read error in read_string")),
     }
 }
+fn unread_bytes(buf_reader: &mut BufReader<File>, n :i64){
+    buf_reader.seek(SeekFrom::Current(-n));
+}
 pub fn read_name(buf_reader: &mut BufReader<File>) -> Token {
     let mut name_buf: Vec<u8> = Vec::with_capacity(128);
 
@@ -339,7 +367,7 @@ pub fn read_name(buf_reader: &mut BufReader<File>) -> Token {
                 match c {
                     c if is_white(c) => break,
                     c if is_delimiter(c) => {
-                        buf_reader.seek(SeekFrom::Current(-1));
+                        unread_bytes(buf_reader, 1);
                         break;
                     }
 
@@ -401,7 +429,7 @@ pub fn skip_white(buf_reader: &mut BufReader<File>) {
         match buf_reader.read(&mut buf) {
             Ok(c) => {
                 if !is_white(buf[0]) {
-                    buf_reader.seek(SeekFrom::Current(-1));
+                    unread_bytes(buf_reader, 1);
                     break;
                 }
             }
